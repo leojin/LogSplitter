@@ -2,17 +2,91 @@
 # -*- coding: utf-8 -*-
 
 import os
+import sys
+import getopt
 import ConfigParser
 
-def main():
+def parseConf(conf):
+    print conf
+    return False
 
-    """params check
-    """
+def main(sections):
+    pass
 
-    """conf read
-    """
+def log(msg, level = "notice"):
+    level = level.upper()
+    if "NOTICE" == level:
+        strPre = "\033[1;32m[NOTICE]\033[0m "
+    elif "WARNING" == level:
+        strPre = "\033[1;33m[WARNING]\033[0m "
+    elif "ERROR" == level:
+        strPre = "\033[1;31m[ERROR]\033[0m "
+    elif "DEBUG" == level:
+        strPre = "\033[1;34m[DEBUG]\033[0m "
+    else:
+        strPre = ""
+    logStr = strPre + str(msg)
+    print logStr
 
+def usage():
+    print """Usage: %s [options] [args] section1 section2 ...
 
+--config-file <PATH>    : set the path of configfile
+ -c                       DEFAULT: /etc/logsplitter.ini
+
+--help                  : display this usage
+ -h
+
+If there is no args for section , \"DEFAULT\" section will be set""" % sys.argv[0]
 
 if __name__ == "__main__":
-    main()
+    # parse args
+    optShort = "hc:"
+    optLong = ["help", "config-file="]
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], optShort, optLong)
+    except getopt.GetoptError as err:
+        log(err, "ERROR")
+        usage()
+        exit(1)
+    # set config
+    configFile = "/etc/logsplitter.ini"
+    for opt, arg in opts:
+        if opt in ("-h", "--help"):
+            usage()
+            exit(0)
+        elif opt in ("-c", "--config-file"):
+            configFile = arg
+        else:
+            log("Option %s not found" % opt, "ERROR")
+            exit(1)
+    # check config file
+    if False == os.path.exists(configFile):
+        log("config file %s not found" % configFile, "ERROR")
+        exit(1)
+    if False == os.path.isfile(configFile):
+        log("config file %s is not a file" % configFile, "ERROR")
+        exit(1)
+    if False == os.access(configFile, os.R_OK):
+        log("config file %s is not readable" % configFile, "ERROR")
+        exit(1)
+    # get sections
+    try:
+        conf = ConfigParser.ConfigParser()
+        conf.read(configFile)
+    except Exception as err:
+        log(err, "ERROR")
+        exit(1) 
+    if 0 == len(args):
+        args = ['DEFAULT']
+    sections = []
+    for sectionName in args:
+        if False == conf.has_section(sectionName):
+            log("config file has no section %s" % sectionName, "WARNING")
+            continue
+        section = parseConf(conf.items(sectionName))
+        if False == section:
+            log("section %s will be ignore" % sectionName, "WARNING")
+            continue
+        sections.append(section)
+    main(sections)
