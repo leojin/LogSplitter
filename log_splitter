@@ -3,15 +3,144 @@
 
 import os
 import sys
+import time
 import getopt
+import signal
+import tarfile
+import zipfile
+import commands
 import ConfigParser
+from glob import glob
+from datetime import timedelta, datetime
 
-def parseConf(conf):
-    print conf
-    return False
+DEFAULT_CONFIG_FILE = "/etc/logsplitter.ini"
 
-def main(sections):
-    pass
+MAP_SUFFIX_NEW = dict(
+    day = "%Y%m%d",
+    hour = "%Y%m%d%H",
+    minute = "%Y%m%d%H%M",
+)
+
+confRule = []
+confRule.append({
+    "name": "file_path",
+    "ness": True
+})
+confRule.append({
+    "name": "split_granularity",
+    "ness": True,
+    "map": ("day", "hour", "minute")
+})
+confRule.append({
+    "name": "file_action",
+    "ness": True,
+    "map": ("del", "back", "no")
+})
+confRule.append({
+    "name": "backup_format",
+    "ness": [
+        {
+            "option": "file_action",
+            "condition": "==",
+            "val": "back"
+        }
+    ],
+    "map": ("tar.gz", "zip")
+})
+confRule.append({
+    "name": "backup_path",
+    "ness": [
+        {
+            "option": "file_action",
+            "condition": "==",
+            "val": "back"
+        }
+    ]
+})
+confRule.append({
+    "name": "file_days",
+    "ness": [
+        {
+            "option": "file_action",
+            "condition": "!=",
+            "val": "no"
+        }
+    ]
+})
+confRule.append({
+    "name": "server_pid_file",
+    "check": "read"
+})
+confRule.append({
+    "name": "custom_command"
+})
+
+def backupFiles(files, path, backFormat):
+    path = os.path.realpath(path)
+    backupName = os.path.basename(files) + ".bak"
+    if False == os.path.exists(path):
+        os.mkdirs(path)
+    if "tar.gz" == backFormat:
+        tarIns = tarfile.open(path + "/" + backupName + ".tar.gz", "w")
+        files = glob(files + "*")
+        for file in files:
+            tarIns.add(file)
+        tarIns.close()
+    elif "zip" == backFormat:
+        zipIns = zipfile.open(path + "/" + backupName + ".zip", "w")
+        files = glob(files + "*")
+        for file in files:
+            zipIns.write(file)
+        zipIns.close()
+    else:
+        pass
+
+def parseConf(conf, sectionName):
+    result = dict()
+    for rule in confRule:
+        optName = rule["name"]
+        optNess = rule.has_key("ness") and rule["ness"] or False
+        optCheck = rule.has_key("check") and rule["check"] or False
+        optValue = conf.has_option(sectionName, optName) and conf.get(sectionName, optName) or None
+
+        if rule.has_key("map") and not optValue in rule["map"]:
+            log("option \"%s\" is out of range" % optName, "ERROR")
+            return False
+        if "read" == optCheck:
+            if False == os.path.exists(optValue):
+                log("%s not found" % optValue, "ERROR")
+                return False
+            if False == os.path.isfile(optValue):
+                log("%s is not a file" % optValue, "ERROR")
+                return False
+            if False == os.access(optValue, os.R_OK):
+                log("%s is not readable" % optValue, "ERROR")
+                return False
+
+        if list == type(optNess):
+            optNessComplex = True
+            for optNessDependence in optNess:
+                tmpOptValue = result[optNessDependence["option"]]
+                tmpOptValueCompare = optNessDependence["val"]
+                if "==" == optNessDependence["condition"]:
+                    if tmpOptValueCompare != tmpOptValue:
+                        optNessComplex = False
+                        break
+                elif "!=" == optNessDependence["condition"]:
+                    if tmpOptValueCompare == tmpOptValue:
+                        optNessComplex = False
+                        break
+                else:
+                    log("conf rule error", "ERROR")
+                    return False
+            optNess = optNessComplex
+
+        if "" != optValue and None != optValue:
+            result[optName] = optValue
+        if True == optNess and False == result.has_key(optName):
+            log("option \"%s\" is not exist" % optName, "ERROR")
+            return False
+    return result
 
 def log(msg, level = "notice"):
     level = level.upper()
@@ -32,17 +161,73 @@ def usage():
     print """Usage: %s [options] [args] section1 section2 ...
 
 --config-file <PATH>    : set the path of configfile
- -c                       DEFAULT: /etc/logsplitter.ini
+ -c                       DEFAULT: %s
+
+--test                  : just check the config file
+ -t
 
 --help                  : display this usage
  -h
 
-If there is no args for section , \"DEFAULT\" section will be set""" % sys.argv[0]
+TIP: Don't use section named \"DEFAULT\"""" % (sys.argv[0], DEFAULT_CONFIG_FILE)
+
+def main(sections):
+    dateNow = datetime.now()
+    listRename = []
+    listReload = []
+    listBackup = []
+    listDelete = []
+    listCustomCommand = []
+    for section in sections:
+        name = section["name"]
+        conf = section["conf"]
+
+        if os.path.exists(conf["file_path"]):
+            isRename = True
+            pathSuffixNew = dateNow.strftime(MAP_SUFFIX_NEW[conf["split_granularity"]])
+            listRename.append((conf["file_path"], conf["file_path"] + "." + pathSuffixNew))
+            if conf.has_key("server_pid_file"):
+                listReload.append(conf["server_pid_file"])
+
+        if "no" != conf["file_action"]:
+            dateHistory = dateNow - timedelta(int(conf["file_days"]))
+            pathSuffixHistory = dateHistory.strftime("%Y%m%d")
+            filePathHistory = conf["file_path"] + "." + pathSuffixHistory
+            listDelete.append(filePathHistory)
+
+        if "back" == conf["file_action"]:
+            listBackup.append((filePathHistory, conf["backup_path"], conf["backup_format"]))
+
+        if conf.has_key('custom_command'):
+            listCustomCommand.append(conf['custom_command'])
+
+    # split the log
+    for ins in listRename:
+        os.rename(*ins)
+    # reload the server
+    for ins in listReload:
+        pid = int(open(ins).read())
+        os.kill(pid, signal.SIGUSR1)
+    # wait for the server reload
+    if len(listReload):
+        time.sleep(1)
+    # backup history files 
+    for ins in listBackup:
+        backupFiles(*ins)
+    # delete history files
+    for ins in listDelete:
+        files = glob(ins + "*")
+        for file in files:
+            os.remove(file)
+    # execute custom command
+    for cmd in listCustomCommand:
+        status, output = commands.getstatusoutput(cmd)
+        log("Command: %s Status: %d\n%s" % (cmd, status, output))
 
 if __name__ == "__main__":
     # parse args
-    optShort = "hc:"
-    optLong = ["help", "config-file="]
+    optShort = "htc:"
+    optLong = ["help", "test", "config-file="]
     try:
         opts, args = getopt.getopt(sys.argv[1:], optShort, optLong)
     except getopt.GetoptError as err:
@@ -50,11 +235,15 @@ if __name__ == "__main__":
         usage()
         exit(1)
     # set config
-    configFile = "/etc/logsplitter.ini"
+    configFile = DEFAULT_CONFIG_FILE
+    logFile = None
+    isTest = False
     for opt, arg in opts:
         if opt in ("-h", "--help"):
             usage()
             exit(0)
+        elif opt in ("-t", "--test"):
+            isTest = True
         elif opt in ("-c", "--config-file"):
             configFile = arg
         else:
@@ -77,16 +266,20 @@ if __name__ == "__main__":
     except Exception as err:
         log(err, "ERROR")
         exit(1) 
-    if 0 == len(args):
-        args = ['DEFAULT']
     sections = []
     for sectionName in args:
         if False == conf.has_section(sectionName):
             log("config file has no section %s" % sectionName, "WARNING")
             continue
-        section = parseConf(conf.items(sectionName))
-        if False == section:
-            log("section %s will be ignore" % sectionName, "WARNING")
+        sectionConf = parseConf(conf, sectionName)
+        if False == sectionConf:
+            log("section \"%s\" will be ignore" % sectionName, "WARNING")
             continue
-        sections.append(section)
+        sections.append({
+            "name": sectionName,
+            "conf": sectionConf
+        })
+    if isTest:
+        log("the following sections passed check:\n%s" % map(lambda ins: ins["name"], sections))
+        exit(0)
     main(sections)
