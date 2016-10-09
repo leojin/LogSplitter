@@ -76,24 +76,28 @@ confRule.append({
 })
 
 def backupFiles(files, path, backFormat):
+    if False == os.path.isabs(path):
+        path = os.path.dirname(files) + "/" + path
     path = os.path.realpath(path)
     backupName = os.path.basename(files) + ".bak"
     if False == os.path.exists(path):
-        os.mkdirs(path)
+        os.makedirs(path)
+    files = glob(files + "*")
+    if 0 == len(files):
+        return True
     if "tar.gz" == backFormat:
-        tarIns = tarfile.open(path + "/" + backupName + ".tar.gz", "w")
-        files = glob(files + "*")
+        tarIns = tarfile.open(path + "/" + backupName + ".tar.gz", "w:gz")
         for file in files:
-            tarIns.add(file)
+            tarIns.add(file, os.path.basename(file))
         tarIns.close()
     elif "zip" == backFormat:
-        zipIns = zipfile.ZipFile(path + "/" + backupName + ".zip", "w")
-        files = glob(files + "*")
+        zipIns = zipfile.ZipFile(path + "/" + backupName + ".zip", "w", zipfile.ZIP_DEFLATED)
         for file in files:
-            zipIns.write(file)
+            zipIns.write(file, os.path.basename(file))
         zipIns.close()
     else:
-        pass
+        return False
+    return True
 
 def parseConf(conf, sectionName):
     result = dict()
@@ -169,12 +173,12 @@ def usage():
 --help                  : display this usage
  -h
 
-TIP: Don't use section named \"DEFAULT\"""" % (sys.argv[0], DEFAULT_CONFIG_FILE)
+TIP: Don't use section named \"DEFAULT\" """ % (sys.argv[0], DEFAULT_CONFIG_FILE)
 
 def main(sections):
     dateNow = datetime.now()
     listRename = []
-    listReload = ([])
+    listReload = set([])
     listBackup = []
     listDelete = []
     listCustomCommand = []
