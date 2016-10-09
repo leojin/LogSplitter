@@ -15,12 +15,6 @@ from datetime import timedelta, datetime
 
 DEFAULT_CONFIG_FILE = "/etc/logsplitter.ini"
 
-MAP_SUFFIX_NEW = dict(
-    day = "%Y%m%d",
-    hour = "%Y%m%d%H",
-    minute = "%Y%m%d%H%M",
-)
-
 confRule = []
 confRule.append({
     "name": "file_path",
@@ -188,7 +182,20 @@ def main(sections):
 
         if os.path.exists(conf["file_path"]):
             isRename = True
-            pathSuffixNew = dateNow.strftime(MAP_SUFFIX_NEW[conf["split_granularity"]])
+            timeDeltaOpt = dict()
+            if "day" == conf["split_granularity"]:
+                timeDeltaOpt["days"] = 1
+                formatTpl = "%Y%m%d"
+            elif "hour" == conf["split_granularity"]:
+                timeDeltaOpt["seconds"] = 3600
+                formatTpl = "%Y%m%d%H"
+            elif "minute" == conf["split_granularity"]:
+                timeDeltaOpt["seconds"] = 60
+                formatTpl = "%Y%m%d%H%M"
+            else:
+                pass
+            dateNew = dateNow - timedelta(**timeDeltaOpt)
+            pathSuffixNew = dateNew.strftime(formatTpl)
             listRename.append((conf["file_path"], conf["file_path"] + "." + pathSuffixNew))
             if conf.has_key("server_pid_file"):
                 listReload.add(conf["server_pid_file"])
