@@ -1,5 +1,5 @@
 # logspliter
-A small tool to split your program log(e.g. nginx access log)
+A small tool to split your program log(**e.g.** nginx access log)
 This tool works with crontab or some other dispatchers.
 It needs a conf file in 'ini' format and the default path is /etc/logsplitter.ini.
 
@@ -20,15 +20,15 @@ Usage: ./log_splitter [options] [args] section1 section2 ...
 
 The tool needs python 2.7.
 
-With --config-file/-c, you can use custom path for your conf file.
-With --test/-t, you can just test your config instead of running the split program directly.
+With `--config-file`/`-c`, you can use custom path for your conf file.
+With `--test`/`-t`, you can just test your config instead of running the split program directly.
 
-'Sections' is the same concept in ini file.
-Every section is an independent conf for a log file.
+'Sections' is the same concept in 'ini' file.
+Every section is an independent conf for a log split task.
 
-All the options are described detailly in the conf.ini, your can copy it(e.g. copy it to /etc and rename it to 'logsplitter.ini')
+All the options are described detailly in the conf.ini.(**e.g.** you can copy it to `/etc` and rename it to 'logsplitter.ini')
 
-Keep the default section and its options is helper, unless you want to write all the options.
+Keep the default section and its options is helpful, unless you want to write all the options.
 
 # Example
 
@@ -58,10 +58,10 @@ And here is my crontab config
  0 * * * * /root/opbin/logSplitter/log_splitter ACCESS_BLOG ACCESS_WEIXIN >> /root/opbin/logSplitter/runtime.log 2>&1
 ```
 
-This tools helps me split the log, compress the log, delete the log, and reload the server config(it works for nginx/httpd by sending an usr1 signal to the main process, so you need to set the server_pid_file option)
+This config helps me split the log, compress the log, delete the log, and reload the server config(it works with nginx/httpd by sending an 'usr1' signal to the main process, so you need to set the `server_pid_file` option).
 
-Logs splited by different granularity need separately crontab command.
-For example if you have those two section:
+Logs splited by different granularity need to run separately.
+For example if you have those two sections:
 
 ```ini
 [SPLIT_DAY]
@@ -81,6 +81,3 @@ Then you need two crontab commands:
 0 0 * * * /root/opbin/logSplitter/log_splitter SPLIT_DAY
 0 * * * * /root/opbin/logSplitter/log_splitter SPLIT_HOUR
 ```
-
-
-
